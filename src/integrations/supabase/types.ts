@@ -6,575 +6,132 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[]
 
-// NOTE: hand-maintained to match supabase/migrations/2026061210*.sql (foundation
-// refactor). Regenerate with `supabase gen types typescript --linked` once the
-// migrations are applied to refresh/extend (e.g. stub tables omitted here).
 export type Database = {
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
   public: {
     Tables: {
-      orgs: {
-        Row: {
-          id: string
-          name: string
-          settings: Json
-          retention_months: number
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          name: string
-          settings?: Json
-          retention_months?: number
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          name?: string
-          settings?: Json
-          retention_months?: number
-          created_at?: string
-        }
-        Relationships: []
-      }
-      org_members: {
-        Row: {
-          id: string
-          org_id: string
-          user_id: string
-          role: Database["public"]["Enums"]["org_member_role"]
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          org_id: string
-          user_id: string
-          role?: Database["public"]["Enums"]["org_member_role"]
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          org_id?: string
-          user_id?: string
-          role?: Database["public"]["Enums"]["org_member_role"]
-          created_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "org_members_org_id_fkey"
-            columns: ["org_id"]
-            isOneToOne: false
-            referencedRelation: "orgs"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      roles: {
-        Row: {
-          id: string
-          org_id: string
-          recruiter_id: string
-          title: string
-          description: string
-          status: Database["public"]["Enums"]["role_status"]
-          knockout_rules: Json
-          dept: string | null
-          location: string | null
-          opened_at: string | null
-          closed_at: string | null
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          org_id: string
-          recruiter_id: string
-          title: string
-          description: string
-          status?: Database["public"]["Enums"]["role_status"]
-          knockout_rules?: Json
-          dept?: string | null
-          location?: string | null
-          opened_at?: string | null
-          closed_at?: string | null
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          org_id?: string
-          recruiter_id?: string
-          title?: string
-          description?: string
-          status?: Database["public"]["Enums"]["role_status"]
-          knockout_rules?: Json
-          dept?: string | null
-          location?: string | null
-          opened_at?: string | null
-          closed_at?: string | null
-          created_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "roles_org_id_fkey"
-            columns: ["org_id"]
-            isOneToOne: false
-            referencedRelation: "orgs"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      rubric_versions: {
-        Row: {
-          id: string
-          org_id: string
-          role_id: string
-          version: number
-          competencies: Json
-          screening_questions: Json
-          knockout_rules: Json
-          locked_at: string | null
-          locked_by: string | null
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          org_id: string
-          role_id: string
-          version: number
-          competencies?: Json
-          screening_questions?: Json
-          knockout_rules?: Json
-          locked_at?: string | null
-          locked_by?: string | null
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          org_id?: string
-          role_id?: string
-          version?: number
-          competencies?: Json
-          screening_questions?: Json
-          knockout_rules?: Json
-          locked_at?: string | null
-          locked_by?: string | null
-          created_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "rubric_versions_role_id_fkey"
-            columns: ["role_id"]
-            isOneToOne: false
-            referencedRelation: "roles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       candidates: {
         Row: {
-          id: string
-          org_id: string
-          full_name: string
-          email: string
-          phone: string | null
-          location: string | null
-          headline: string | null
-          years_exp: number | null
-          skills: string[]
-          resume_summary: string | null
-          consent_pool: boolean
-          consent_at: string | null
-          last_active_at: string | null
           created_at: string
-        }
-        Insert: {
-          id?: string
-          org_id: string
-          full_name: string
           email: string
-          phone?: string | null
-          location?: string | null
-          headline?: string | null
-          years_exp?: number | null
-          skills?: string[]
-          resume_summary?: string | null
-          consent_pool?: boolean
-          consent_at?: string | null
-          last_active_at?: string | null
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          org_id?: string
-          full_name?: string
-          email?: string
-          phone?: string | null
-          location?: string | null
-          headline?: string | null
-          years_exp?: number | null
-          skills?: string[]
-          resume_summary?: string | null
-          consent_pool?: boolean
-          consent_at?: string | null
-          last_active_at?: string | null
-          created_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "candidates_org_id_fkey"
-            columns: ["org_id"]
-            isOneToOne: false
-            referencedRelation: "orgs"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      applications: {
-        Row: {
+          full_name: string
           id: string
-          org_id: string
-          candidate_id: string
-          role_id: string
-          rubric_version_id: string | null
-          stage: Database["public"]["Enums"]["candidate_stage"]
-          stage_entered_at: string
-          status: Database["public"]["Enums"]["application_status"]
-          source: string | null
-          rejection_reason: string | null
+          job_id: string
           knockout_answers: Json
-          needs_human_screen: boolean
-          created_at: string
+          phone: string | null
+          rejection_reason: string | null
+          resume_text: string | null
+          stage: Database["public"]["Enums"]["candidate_stage"]
         }
         Insert: {
-          id?: string
-          org_id: string
-          candidate_id: string
-          role_id: string
-          rubric_version_id?: string | null
-          stage?: Database["public"]["Enums"]["candidate_stage"]
-          stage_entered_at?: string
-          status?: Database["public"]["Enums"]["application_status"]
-          source?: string | null
-          rejection_reason?: string | null
-          knockout_answers?: Json
-          needs_human_screen?: boolean
           created_at?: string
+          email: string
+          full_name: string
+          id?: string
+          job_id: string
+          knockout_answers?: Json
+          phone?: string | null
+          rejection_reason?: string | null
+          resume_text?: string | null
+          stage?: Database["public"]["Enums"]["candidate_stage"]
         }
         Update: {
-          id?: string
-          org_id?: string
-          candidate_id?: string
-          role_id?: string
-          rubric_version_id?: string | null
-          stage?: Database["public"]["Enums"]["candidate_stage"]
-          stage_entered_at?: string
-          status?: Database["public"]["Enums"]["application_status"]
-          source?: string | null
-          rejection_reason?: string | null
-          knockout_answers?: Json
-          needs_human_screen?: boolean
           created_at?: string
+          email?: string
+          full_name?: string
+          id?: string
+          job_id?: string
+          knockout_answers?: Json
+          phone?: string | null
+          rejection_reason?: string | null
+          resume_text?: string | null
+          stage?: Database["public"]["Enums"]["candidate_stage"]
         }
         Relationships: [
           {
-            foreignKeyName: "applications_candidate_id_fkey"
-            columns: ["candidate_id"]
+            foreignKeyName: "candidates_job_id_fkey"
+            columns: ["job_id"]
             isOneToOne: false
-            referencedRelation: "candidates"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "applications_role_id_fkey"
-            columns: ["role_id"]
-            isOneToOne: false
-            referencedRelation: "roles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "applications_rubric_version_id_fkey"
-            columns: ["rubric_version_id"]
-            isOneToOne: false
-            referencedRelation: "rubric_versions"
+            referencedRelation: "jobs"
             referencedColumns: ["id"]
           },
         ]
       }
-      stage_events: {
+      decisions: {
         Row: {
-          id: string
-          org_id: string
-          application_id: string
+          candidate_id: string
+          created_at: string
+          decided_by: string
           from_stage: Database["public"]["Enums"]["candidate_stage"] | null
-          to_stage: Database["public"]["Enums"]["candidate_stage"]
-          actor_id: string | null
-          actor_type: Database["public"]["Enums"]["actor_type"]
+          id: string
           reason: string | null
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          org_id: string
-          application_id: string
-          from_stage?: Database["public"]["Enums"]["candidate_stage"] | null
           to_stage: Database["public"]["Enums"]["candidate_stage"]
-          actor_id?: string | null
-          actor_type: Database["public"]["Enums"]["actor_type"]
-          reason?: string | null
-          created_at?: string
         }
-        Update: {
-          id?: string
-          org_id?: string
-          application_id?: string
+        Insert: {
+          candidate_id: string
+          created_at?: string
+          decided_by: string
           from_stage?: Database["public"]["Enums"]["candidate_stage"] | null
-          to_stage?: Database["public"]["Enums"]["candidate_stage"]
-          actor_id?: string | null
-          actor_type?: Database["public"]["Enums"]["actor_type"]
+          id?: string
           reason?: string | null
-          created_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "stage_events_application_id_fkey"
-            columns: ["application_id"]
-            isOneToOne: false
-            referencedRelation: "applications"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      screen_sessions: {
-        Row: {
-          id: string
-          org_id: string
-          application_id: string
-          mode: Database["public"]["Enums"]["screen_mode"]
-          status: Database["public"]["Enums"]["screening_status"]
-          state: Json
-          transcript: Json
-          flags: Json
-          completeness: number | null
-          started_at: string | null
-          completed_at: string | null
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          org_id: string
-          application_id: string
-          mode?: Database["public"]["Enums"]["screen_mode"]
-          status?: Database["public"]["Enums"]["screening_status"]
-          state?: Json
-          transcript?: Json
-          flags?: Json
-          completeness?: number | null
-          started_at?: string | null
-          completed_at?: string | null
-          created_at?: string
+          to_stage: Database["public"]["Enums"]["candidate_stage"]
         }
         Update: {
-          id?: string
-          org_id?: string
-          application_id?: string
-          mode?: Database["public"]["Enums"]["screen_mode"]
-          status?: Database["public"]["Enums"]["screening_status"]
-          state?: Json
-          transcript?: Json
-          flags?: Json
-          completeness?: number | null
-          started_at?: string | null
-          completed_at?: string | null
-          created_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "screen_sessions_application_id_fkey"
-            columns: ["application_id"]
-            isOneToOne: true
-            referencedRelation: "applications"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      evidence: {
-        Row: {
-          id: string
-          org_id: string
-          application_id: string
-          rubric_version_id: string | null
-          extraction_id: string
-          competency_key: string
-          source: string
-          summary: string | null
-          quotes: Json
-          flags: string[]
-          completeness: string | null
-          model_version: string | null
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          org_id: string
-          application_id: string
-          rubric_version_id?: string | null
-          extraction_id?: string
-          competency_key: string
-          source?: string
-          summary?: string | null
-          quotes?: Json
-          flags?: string[]
-          completeness?: string | null
-          model_version?: string | null
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          org_id?: string
-          application_id?: string
-          rubric_version_id?: string | null
-          extraction_id?: string
-          competency_key?: string
-          source?: string
-          summary?: string | null
-          quotes?: Json
-          flags?: string[]
-          completeness?: string | null
-          model_version?: string | null
-          created_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "evidence_application_id_fkey"
-            columns: ["application_id"]
-            isOneToOne: false
-            referencedRelation: "applications"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      candidate_files: {
-        Row: {
-          id: string
-          org_id: string
-          candidate_id: string
-          application_id: string | null
-          kind: string
-          storage_path: string
-          mime: string | null
-          size_bytes: number | null
-          parsed_at: string | null
-          parse_version: number | null
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          org_id: string
-          candidate_id: string
-          application_id?: string | null
-          kind?: string
-          storage_path: string
-          mime?: string | null
-          size_bytes?: number | null
-          parsed_at?: string | null
-          parse_version?: number | null
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          org_id?: string
           candidate_id?: string
-          application_id?: string | null
-          kind?: string
-          storage_path?: string
-          mime?: string | null
-          size_bytes?: number | null
-          parsed_at?: string | null
-          parse_version?: number | null
           created_at?: string
+          decided_by?: string
+          from_stage?: Database["public"]["Enums"]["candidate_stage"] | null
+          id?: string
+          reason?: string | null
+          to_stage?: Database["public"]["Enums"]["candidate_stage"]
         }
         Relationships: [
           {
-            foreignKeyName: "candidate_files_candidate_id_fkey"
+            foreignKeyName: "decisions_candidate_id_fkey"
             columns: ["candidate_id"]
             isOneToOne: false
             referencedRelation: "candidates"
             referencedColumns: ["id"]
           },
         ]
-      }
-      audit_log: {
-        Row: {
-          id: string
-          org_id: string
-          actor: string | null
-          action: string
-          entity: string | null
-          entity_id: string | null
-          detail: Json
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          org_id: string
-          actor?: string | null
-          action: string
-          entity?: string | null
-          entity_id?: string | null
-          detail?: Json
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          org_id?: string
-          actor?: string | null
-          action?: string
-          entity?: string | null
-          entity_id?: string | null
-          detail?: Json
-          created_at?: string
-        }
-        Relationships: []
       }
       jobs: {
         Row: {
-          id: string
-          org_id: string | null
-          kind: string
-          payload: Json
-          status: Database["public"]["Enums"]["job_state"]
-          priority: number
-          attempts: number
-          run_after: string
-          last_error: string | null
+          competencies: Json
           created_at: string
-          updated_at: string
+          description: string
+          id: string
+          knockout_criteria: Json
+          recruiter_id: string
+          screening_questions: Json
+          status: Database["public"]["Enums"]["job_status"]
+          title: string
         }
         Insert: {
-          id?: string
-          org_id?: string | null
-          kind: string
-          payload?: Json
-          status?: Database["public"]["Enums"]["job_state"]
-          priority?: number
-          attempts?: number
-          run_after?: string
-          last_error?: string | null
+          competencies?: Json
           created_at?: string
-          updated_at?: string
+          description: string
+          id?: string
+          knockout_criteria?: Json
+          recruiter_id: string
+          screening_questions?: Json
+          status?: Database["public"]["Enums"]["job_status"]
+          title: string
         }
         Update: {
-          id?: string
-          org_id?: string | null
-          kind?: string
-          payload?: Json
-          status?: Database["public"]["Enums"]["job_state"]
-          priority?: number
-          attempts?: number
-          run_after?: string
-          last_error?: string | null
+          competencies?: Json
           created_at?: string
-          updated_at?: string
+          description?: string
+          id?: string
+          knockout_criteria?: Json
+          recruiter_id?: string
+          screening_questions?: Json
+          status?: Database["public"]["Enums"]["job_status"]
+          title?: string
         }
         Relationships: []
       }
@@ -598,6 +155,50 @@ export type Database = {
           id?: string
         }
         Relationships: []
+      }
+      screening_interviews: {
+        Row: {
+          candidate_id: string
+          completed_at: string | null
+          completeness_score: number | null
+          created_at: string
+          evidence: Json | null
+          flags: Json
+          id: string
+          status: Database["public"]["Enums"]["screening_status"]
+          transcript: Json
+        }
+        Insert: {
+          candidate_id: string
+          completed_at?: string | null
+          completeness_score?: number | null
+          created_at?: string
+          evidence?: Json | null
+          flags?: Json
+          id?: string
+          status?: Database["public"]["Enums"]["screening_status"]
+          transcript?: Json
+        }
+        Update: {
+          candidate_id?: string
+          completed_at?: string | null
+          completeness_score?: number | null
+          created_at?: string
+          evidence?: Json | null
+          flags?: Json
+          id?: string
+          status?: Database["public"]["Enums"]["screening_status"]
+          transcript?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "screening_interviews_candidate_id_fkey"
+            columns: ["candidate_id"]
+            isOneToOne: true
+            referencedRelation: "candidates"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_roles: {
         Row: {
@@ -629,19 +230,9 @@ export type Database = {
         }
         Returns: boolean
       }
-      current_org_id: {
-        Args: Record<PropertyKey, never>
-        Returns: string
-      }
-      is_org_member: {
-        Args: { _org: string }
-        Returns: boolean
-      }
     }
     Enums: {
       app_role: "recruiter" | "admin"
-      org_member_role: "owner" | "admin" | "recruiter" | "hm" | "interviewer" | "viewer"
-      role_status: "draft" | "open" | "closed"
       candidate_stage:
         | "applied"
         | "knocked_out"
@@ -650,11 +241,8 @@ export type Database = {
         | "shortlisted"
         | "rejected"
         | "hired"
-      application_status: "active" | "rejected" | "hired" | "pooled" | "withdrawn"
-      actor_type: "human" | "system"
-      screen_mode: "chat" | "voice"
+      job_status: "draft" | "open" | "closed"
       screening_status: "pending" | "in_progress" | "completed"
-      job_state: "queued" | "running" | "done" | "failed"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -783,8 +371,6 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["recruiter", "admin"],
-      org_member_role: ["owner", "admin", "recruiter", "hm", "interviewer", "viewer"],
-      role_status: ["draft", "open", "closed"],
       candidate_stage: [
         "applied",
         "knocked_out",
@@ -794,11 +380,8 @@ export const Constants = {
         "rejected",
         "hired",
       ],
-      application_status: ["active", "rejected", "hired", "pooled", "withdrawn"],
-      actor_type: ["human", "system"],
-      screen_mode: ["chat", "voice"],
+      job_status: ["draft", "open", "closed"],
       screening_status: ["pending", "in_progress", "completed"],
-      job_state: ["queued", "running", "done", "failed"],
     },
   },
 } as const
