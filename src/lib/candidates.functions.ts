@@ -46,7 +46,10 @@ export const applyToJob = createServerFn({ method: "POST" })
     // One atomic transaction: dedup-upsert person + insert application + file
     // pointer + system stage event (see migration apply_to_role). Replaces the
     // prior 4 sequential, partial-failure-prone writes.
-    const { data: applicationId, error: aErr } = await supabaseAdmin.rpc("apply_to_role", {
+    const { data: applicationId, error: aErr } = await (supabaseAdmin.rpc as unknown as (
+      fn: string,
+      args: Record<string, unknown>,
+    ) => Promise<{ data: string | null; error: { message: string } | null }>)("apply_to_role", {
       p_role_id: role.id,
       p_full_name: data.full_name,
       p_email: data.email,
@@ -62,7 +65,7 @@ export const applyToJob = createServerFn({ method: "POST" })
       throw new Error(aErr.message);
     }
 
-    return { applicationId: applicationId as string, knockedOut };
+    return { applicationId: applicationId!, knockedOut };
   });
 
 // Public: the screening page hydrates from this (by application id).

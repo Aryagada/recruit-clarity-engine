@@ -474,7 +474,13 @@ export const runQueuedJobs = createServerFn({ method: "POST" })
     if (data.secret !== expected) throw new Error("Unauthorized");
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: claimed, error } = await supabaseAdmin.rpc("claim_jobs", { p_limit: data.limit });
+    const { data: claimed, error } = await (supabaseAdmin.rpc as unknown as (
+      fn: string,
+      args: Record<string, unknown>,
+    ) => Promise<{ data: Array<{ id: string; kind: string; payload: unknown; attempts: number }> | null; error: { message: string } | null }>)(
+      "claim_jobs",
+      { p_limit: data.limit },
+    );
     if (error) throw new Error(error.message);
 
     let done = 0;
