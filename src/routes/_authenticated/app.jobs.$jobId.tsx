@@ -5,13 +5,14 @@ import { useState, useEffect } from "react";
 import { getJob, listJobCandidates, decideApplication, updateJob } from "@/lib/jobs.functions";
 import { getResumeUrl } from "@/lib/candidates.functions";
 import { rerunEvidence } from "@/lib/ai.functions";
+import { EvidenceCards, latestEvidence, type EvidenceRow } from "@/components/EvidenceCards";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Copy, ExternalLink, Plus, Trash2, FileText, RefreshCw } from "lucide-react";
+import { Copy, ExternalLink, Plus, Trash2, FileText } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/app/jobs/$jobId")({
   head: () => ({ meta: [{ title: "Role · Interview OS" }] }),
@@ -414,21 +415,6 @@ function DeleteBtn({ onClick }: { onClick: () => void }) {
 // ---- Candidate review panel (pipeline tab) ---------------------------------
 
 type AppRow = Awaited<ReturnType<typeof listJobCandidates>>[number];
-type EvidenceRow = {
-  competency_key: string;
-  summary: string | null;
-  quotes: unknown;
-  completeness: string | null;
-  extraction_id: string;
-  created_at: string;
-};
-
-// Reduce many versioned evidence rows down to the latest extraction run.
-function latestEvidence(rows: EvidenceRow[]): EvidenceRow[] {
-  if (!rows.length) return [];
-  const latest = rows.reduce((a, b) => (a.created_at >= b.created_at ? a : b));
-  return rows.filter((r) => r.extraction_id === latest.extraction_id);
-}
 
 function CandidatePanel({ application, reason, setReason, onDecide, pending, onRescored, screenUrl }: {
   application: AppRow; reason: string; setReason: (v: string) => void;
@@ -438,7 +424,7 @@ function CandidatePanel({ application, reason, setReason, onDecide, pending, onR
   const person = application.candidates as unknown as { full_name: string; email: string; phone: string | null } | null;
   const session = (Array.isArray(application.screen_sessions) ? application.screen_sessions[0] : application.screen_sessions) as
     | { status: string; completeness: number | null; flags: unknown } | null;
-  const evidenceRows = latestEvidence(((application.evidence ?? []) as unknown as EvidenceRow[]));
+  const evidence = (application.evidence ?? []) as unknown as EvidenceRow[];
   const flags = (session?.flags ?? []) as { kind: string; note: string; quote?: string }[];
 
   const getResume = useServerFn(getResumeUrl);
@@ -482,51 +468,13 @@ function CandidatePanel({ application, reason, setReason, onDecide, pending, onR
         <div className="mt-4 rounded border border-destructive/30 bg-destructive/5 p-3 text-sm">Failed disclosed knockout criteria.</div>
       )}
 
-      {evidenceRows.length === 0 ? (
-        <div className="mt-6 rounded border border-dashed border-border p-6 text-sm text-muted-foreground">
-          {session?.status === "in_progress" ? "Screening in progress…" : session?.status === "completed" ? "Extracting evidence…" : "Candidate has not started the AI screening interview yet."}
-        </div>
-      ) : (
-        <div className="mt-6 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="ios-eyebrow">Evidence by competency</div>
-            <Button variant="ghost" size="sm" className="gap-1" disabled={rerunMut.isPending} onClick={() => rerunMut.mutate()}>
-              <RefreshCw className={`h-3.5 w-3.5 ${rerunMut.isPending ? "animate-spin" : ""}`} />Re-run
-            </Button>
-          </div>
-          {evidenceRows.map((e) => {
-            const quotes = Array.isArray(e.quotes) ? (e.quotes as string[]) : [];
-            return (
-              <div key={e.competency_key} className="rounded-md border border-border p-4">
-                <div className="flex items-center justify-between">
-                  <div className="font-medium">{e.competency_key}</div>
-                  <span className={`ios-mono text-[10px] rounded px-1.5 py-0.5 ${e.completeness === "strong" ? "bg-accent/15 text-accent" : e.completeness === "partial" ? "bg-muted" : "bg-destructive/10 text-destructive"}`}>{e.completeness}</span>
-                </div>
-                <p className="mt-2 text-sm text-muted-foreground">{e.summary}</p>
-                {quotes.length > 0 && (
-                  <ul className="mt-3 space-y-1 border-l-2 border-border pl-3 text-sm italic">
-                    {quotes.map((q, i) => <li key={i}>"{q}"</li>)}
-                  </ul>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {flags.length > 0 && (
-        <div className="mt-6">
-          <div className="ios-eyebrow mb-2">Flags</div>
-          <ul className="space-y-2 text-sm">
-            {flags.map((f, i) => (
-              <li key={i} className="rounded border border-border p-3">
-                <span className="ios-mono text-[10px] text-muted-foreground">{f.kind}</span>
-                <div>{f.note}</div>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      <EvidenceCards
+        evidence={evidence}
+        flags={flags}
+        onRerun={() => rerunMut.mutate()}
+        rerunning={rerunMut.isPending}
+        emptyState={session?.status === "in_progress" ? "Screening in progress…" : session?.status === "completed" ? "Extracting evidence…" : "Candidate has not started the AI screening interview yet."}
+      />
 
       {application.status !== "hired" && application.status !== "rejected" && (
         <div className="mt-6 border-t border-border pt-6">
