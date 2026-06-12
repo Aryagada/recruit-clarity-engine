@@ -69,10 +69,27 @@ export const requireSupabaseAuth = createMiddleware({ type: 'function' }).server
       throw new Error('Unauthorized: No user ID found in token');
     }
 
+    // Resolve the caller's org. org_members has a non-recursive self-policy
+    // (user_id = auth.uid()), so this RLS-bound read is safe and cheap. Every
+    // org-scoped write uses context.orgId for its org_id / RLS WITH CHECK.
+    const { data: membership, error: orgErr } = await supabase
+      .from('org_members')
+      .select('org_id')
+      .eq('user_id', data.claims.sub)
+      .limit(1)
+      .maybeSingle();
+    if (orgErr) {
+      throw new Error(`Could not resolve org membership: ${orgErr.message}`);
+    }
+    if (!membership) {
+      throw new Error('No organization found for this account. Sign out and sign back in.');
+    }
+
     return next({
       context: {
         supabase,
         userId: data.claims.sub,
+        orgId: membership.org_id,
         claims: data.claims,
       },
     });

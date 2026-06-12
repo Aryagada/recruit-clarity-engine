@@ -3,10 +3,15 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useRef, useState } from "react";
 import { screeningTurn } from "@/lib/ai.functions";
-import { getCandidateForScreening } from "@/lib/candidates.functions";
+import { getApplicationForScreening, requestHumanScreen } from "@/lib/candidates.functions";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { toast } from "sonner";
 
+// NOTE: the route param is named `candidateId` for backward-compatible URLs, but
+// its value is an APPLICATION id (apply now navigates here with the application
+// id, and migrated rows reuse the legacy candidate id as the application id, so
+// old links still resolve).
 export const Route = createFileRoute("/screen/$candidateId")({
   head: () => ({ meta: [{ title: "Screening interview · Interview OS" }] }),
   component: Screen,
@@ -15,18 +20,23 @@ export const Route = createFileRoute("/screen/$candidateId")({
 type Msg = { role: "ai" | "candidate"; content: string };
 
 function Screen() {
-  const { candidateId } = Route.useParams();
-  const fetch = useServerFn(getCandidateForScreening);
+  const { candidateId: applicationId } = Route.useParams();
+  const fetch = useServerFn(getApplicationForScreening);
   const turn = useServerFn(screeningTurn);
-  const { data, isLoading } = useQuery({ queryKey: ["cand", candidateId], queryFn: () => fetch({ data: { candidateId } }) });
+  const requestHuman = useServerFn(requestHumanScreen);
+  const { data, isLoading } = useQuery({
+    queryKey: ["application", applicationId],
+    queryFn: () => fetch({ data: { applicationId } }),
+  });
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [complete, setComplete] = useState(false);
   const [started, setStarted] = useState(false);
+  const [humanRequested, setHumanRequested] = useState(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
   const mut = useMutation({
-    mutationFn: (msg?: string) => turn({ data: { candidateId, candidateMessage: msg } }),
+    mutationFn: (msg?: string) => turn({ data: { applicationId, candidateMessage: msg } }),
     onSuccess: (res) => {
       setMessages((m) => [...m, { role: "ai", content: res.aiMessage }]);
       setComplete(res.complete);
@@ -34,18 +44,34 @@ function Screen() {
     },
   });
 
+  const humanMut = useMutation({
+    mutationFn: () => requestHuman({ data: { applicationId } }),
+    onSuccess: () => {
+      setHumanRequested(true);
+      toast.success("Requested — a recruiter will reach out to arrange a human screen.");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
+  });
+
+  // Resume a dropped/returning session: rehydrate transcript from the server.
   useEffect(() => {
     if (!started && data) {
-      const existing = (Array.isArray(data.screening_interviews) ? data.screening_interviews[0] : data.screening_interviews) as { transcript: Msg[]; status: string } | null;
-      if (existing?.transcript?.length) {
-        setMessages(existing.transcript);
-        if (existing.status === "completed") setComplete(true);
+      const session = (Array.isArray(data.screen_sessions) ? data.screen_sessions[0] : data.screen_sessions) as
+        | { transcript: Msg[]; status: string }
+        | null;
+      if (data.needs_human_screen) setHumanRequested(true);
+      if (session?.transcript?.length) {
+        setMessages(session.transcript);
+        if (session.status === "completed") setComplete(true);
         setStarted(true);
       }
     }
   }, [data, started]);
 
-  function start() { setStarted(true); mut.mutate(undefined); }
+  function start() {
+    setStarted(true);
+    mut.mutate(undefined);
+  }
   function send() {
     if (!input.trim() || mut.isPending) return;
     const msg = input.trim();
@@ -55,7 +81,9 @@ function Screen() {
   }
 
   if (isLoading || !data) return <div className="grid min-h-screen place-items-center text-muted-foreground">Loading…</div>;
-  const job = data.jobs as { title: string } | null;
+  const role = data.roles as unknown as { title: string } | null;
+  const person = data.candidates as unknown as { full_name: string } | null;
+  const firstName = person?.full_name?.split(" ")[0] ?? "there";
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -65,7 +93,7 @@ function Screen() {
             <span className="grid h-7 w-7 place-items-center rounded-md bg-primary text-primary-foreground ios-mono text-xs">iOS</span>
             Interview OS
           </Link>
-          <span className="ios-mono text-xs text-muted-foreground">{job?.title}</span>
+          <span className="ios-mono text-xs text-muted-foreground">{role?.title}</span>
         </div>
       </header>
 
@@ -73,13 +101,17 @@ function Screen() {
         {!started ? (
           <div className="m-auto max-w-lg text-center">
             <div className="ios-eyebrow">AI screening interview</div>
-            <h1 className="mt-2 text-3xl font-semibold">Hi {data.full_name.split(" ")[0]}.</h1>
+            <h1 className="mt-2 text-3xl font-semibold">Hi {firstName}.</h1>
             <p className="mt-4 text-sm text-muted-foreground leading-relaxed">
               This is a 10–15 minute structured chat interview conducted by AI. It will be recorded and reviewed by a human recruiter.
               No score is produced — only evidence linked to your own answers.
-              You can request a human-conducted screen instead by replying to your application email.
             </p>
             <Button className="mt-8" size="lg" onClick={start} disabled={mut.isPending}>{mut.isPending ? "Starting…" : "I consent — begin"}</Button>
+            <div className="mt-4">
+              <Button variant="ghost" size="sm" disabled={humanRequested || humanMut.isPending} onClick={() => humanMut.mutate()}>
+                {humanRequested ? "Human screen requested" : "Request a human screen instead"}
+              </Button>
+            </div>
           </div>
         ) : (
           <>

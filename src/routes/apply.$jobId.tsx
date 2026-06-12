@@ -20,8 +20,8 @@ export const getPublicJob = createServerFn({ method: "POST" })
     // Does NOT require the service-role key — a public endpoint shouldn't.
     const { supabasePublic } = await import("@/integrations/supabase/public-client.server");
     const { data: job, error } = await supabasePublic
-      .from("jobs")
-      .select("id, title, description, status, knockout_criteria")
+      .from("roles")
+      .select("id, title, description, status, knockout_rules")
       .eq("id", data.jobId)
       .eq("status", "open")
       .maybeSingle();
@@ -65,7 +65,8 @@ function Apply() {
       if (res.knockedOut) {
         toast.error("Based on your answers, this role isn't a match — thank you for applying.");
       } else {
-        navigate({ to: "/screen/$candidateId", params: { candidateId: res.candidateId } });
+        // The /screen route's param slot now carries the application id.
+        navigate({ to: "/screen/$candidateId", params: { candidateId: res.applicationId } });
       }
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
@@ -73,7 +74,7 @@ function Apply() {
 
   if (isLoading) return <Center>Loading…</Center>;
   if (error || !job) return <Center>This role isn't available.</Center>;
-  const knockouts = (job.knockout_criteria as { question: string; type: string; required_answer?: string }[]) ?? [];
+  const knockouts = (job.knockout_rules as { question: string; type: string; required_answer?: string }[]) ?? [];
 
   return (
     <div className="min-h-screen bg-background">
