@@ -43,72 +43,26 @@ export const applyToJob = createServerFn({ method: "POST" })
       }
     }
 
-    const { data: rv } = await supabaseAdmin
-      .from("rubric_versions")
-      .select("id")
-      .eq("role_id", role.id)
-      .order("version", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    // Upsert the person (dedup on org_id + email; citext => case-insensitive).
-    const { data: person, error: pErr } = await supabaseAdmin
-      .from("candidates")
-      .upsert(
-        {
-          org_id: role.org_id,
-          full_name: data.full_name,
-          email: data.email,
-          phone: data.phone ?? null,
-          resume_summary: data.resume_text ?? null,
-          last_active_at: new Date().toISOString(),
-        },
-        { onConflict: "org_id,email" },
-      )
-      .select("id")
-      .single();
-    if (pErr || !person) throw new Error(pErr?.message ?? "Could not save candidate");
-
-    const { data: app, error: aErr } = await supabaseAdmin
-      .from("applications")
-      .insert({
-        org_id: role.org_id,
-        candidate_id: person.id,
-        role_id: role.id,
-        rubric_version_id: rv?.id ?? null,
-        knockout_answers: data.knockout_answers,
-        stage: knockedOut ? "knocked_out" : "applied",
-        status: knockedOut ? "rejected" : "active",
-        source: "apply",
-      })
-      .select("id")
-      .single();
+    // One atomic transaction: dedup-upsert person + insert application + file
+    // pointer + system stage event (see migration apply_to_role). Replaces the
+    // prior 4 sequential, partial-failure-prone writes.
+    const { data: applicationId, error: aErr } = await supabaseAdmin.rpc("apply_to_role", {
+      p_role_id: role.id,
+      p_full_name: data.full_name,
+      p_email: data.email,
+      p_phone: data.phone ?? null,
+      p_resume_summary: data.resume_text ?? null,
+      p_resume_path: data.resume_path,
+      p_knockout_answers: data.knockout_answers,
+      p_knocked_out: knockedOut,
+    });
     if (aErr) {
-      // 23505 = unique(candidate_id, role_id)
-      if ((aErr as { code?: string }).code === "23505") {
-        throw new Error("You've already applied to this role.");
-      }
+      if (aErr.message.includes("already_applied")) throw new Error("You've already applied to this role.");
+      if (aErr.message.includes("role_not_open")) throw new Error("This role is not currently accepting applications");
       throw new Error(aErr.message);
     }
 
-    await supabaseAdmin.from("candidate_files").insert({
-      org_id: role.org_id,
-      candidate_id: person.id,
-      application_id: app.id,
-      kind: "resume",
-      storage_path: data.resume_path,
-      mime: "application/pdf",
-    });
-    await supabaseAdmin.from("stage_events").insert({
-      org_id: role.org_id,
-      application_id: app.id,
-      from_stage: null,
-      to_stage: knockedOut ? "knocked_out" : "applied",
-      actor_type: "system",
-      reason: knockedOut ? "Failed disclosed knockout criteria" : "Applied",
-    });
-
-    return { applicationId: app.id, knockedOut };
+    return { applicationId: applicationId as string, knockedOut };
   });
 
 // Public: the screening page hydrates from this (by application id).

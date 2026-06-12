@@ -10,15 +10,22 @@ function aiConfigured() {
   return Boolean(process.env.AI_API_KEY && process.env.AI_BASE_URL && process.env.AI_MODEL);
 }
 
-// Identifies which "model" produced a write — the live model id, or "stub".
-function modelVersion() {
-  return aiConfigured() ? process.env.AI_MODEL ?? "unknown" : "stub";
+// Model tiering (spec §7): a cheap/fast model for interactive turn-taking, a
+// stronger model for evidence extraction. Both fall back to AI_MODEL when the
+// tier-specific var is unset.
+function tierModelId(tier: "fast" | "strong") {
+  return (tier === "fast" ? process.env.AI_MODEL_FAST : process.env.AI_MODEL_STRONG) || process.env.AI_MODEL;
 }
 
-async function getModel() {
+// Identifies which "model" produced a write — the live model id, or "stub".
+function modelVersion(tier: "fast" | "strong" = "strong") {
+  return aiConfigured() ? tierModelId(tier) ?? "unknown" : "stub";
+}
+
+async function getModel(tier: "fast" | "strong" = "strong") {
   const apiKey = process.env.AI_API_KEY;
   const baseURL = process.env.AI_BASE_URL;
-  const model = process.env.AI_MODEL;
+  const model = tierModelId(tier);
   const missing = [
     ...(!apiKey ? ["AI_API_KEY"] : []),
     ...(!baseURL ? ["AI_BASE_URL"] : []),
@@ -162,7 +169,7 @@ export const screeningTurn = createServerFn({ method: "POST" })
       const { buildStubInterviewerTurn } = await import("./ai-stub.server");
       text = buildStubInterviewerTurn(screeningQuestions, transcript);
     } else {
-      const model = await getModel();
+      const model = await getModel("fast");
       const systemPrompt = `You are an AI interviewer for "${role.title}". You conduct a structured 10-15 minute screening interview. Rules:
 - Be warm, brief, and professional. One question at a time. Short follow-ups are OK to probe for specifics ("can you give a concrete example?") but stay within scope.
 - DO NOT evaluate, judge, score, or hint at outcomes.
@@ -206,11 +213,7 @@ Current progress: ${transcript.length} message(s) exchanged.`;
       .eq("id", session.id);
 
     if (isComplete) {
-      try {
-        await extractEvidenceInternal(data.applicationId, "system");
-      } catch (e) {
-        console.error("evidence extraction failed", e);
-      }
+      await enqueueOrRunEvidence(data.applicationId, app.org_id);
     }
 
     return { aiMessage: cleanText, complete: isComplete };
@@ -428,6 +431,79 @@ export const voiceTranscriptWebhook = createServerFn({ method: "POST" })
         { onConflict: "application_id" },
       );
 
-    await extractEvidenceInternal(data.applicationId, "system");
+    await enqueueOrRunEvidence(data.applicationId, app.org_id);
     return { ok: true };
+  });
+
+// On screen completion: enqueue an extract_evidence job when the async queue is
+// enabled (USE_EVIDENCE_QUEUE + a worker draining it), otherwise extract inline.
+// Inline is the safe default so evidence always appears with no extra infra.
+async function enqueueOrRunEvidence(applicationId: string, orgId: string) {
+  if (process.env.USE_EVIDENCE_QUEUE) {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    await supabaseAdmin.from("jobs").insert({
+      org_id: orgId,
+      kind: "extract_evidence",
+      payload: { applicationId },
+      priority: 1,
+    });
+    return;
+  }
+  try {
+    await extractEvidenceInternal(applicationId, "system");
+  } catch (e) {
+    console.error("evidence extraction failed", e);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Queue worker (spec §7). Drains queued jobs at controlled concurrency. Invoke
+// on a schedule (pg_cron+pg_net / Supabase scheduled function / external cron)
+// with the shared WORKER_SECRET. Until a scheduler runs it, the inline fallback
+// above keeps evidence extraction working.
+// ---------------------------------------------------------------------------
+const MAX_ATTEMPTS = 5;
+
+export const runQueuedJobs = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) =>
+    z.object({ secret: z.string().min(1), limit: z.number().int().min(1).max(50).default(10) }).parse(input),
+  )
+  .handler(async ({ data }) => {
+    const expected = process.env.WORKER_SECRET;
+    if (!expected) throw new Error("Worker not configured (WORKER_SECRET missing)");
+    if (data.secret !== expected) throw new Error("Unauthorized");
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: claimed, error } = await supabaseAdmin.rpc("claim_jobs", { p_limit: data.limit });
+    if (error) throw new Error(error.message);
+
+    let done = 0;
+    let failed = 0;
+    for (const job of claimed ?? []) {
+      try {
+        if (job.kind === "extract_evidence") {
+          const applicationId = (job.payload as { applicationId?: string })?.applicationId;
+          if (!applicationId) throw new Error("missing applicationId in payload");
+          await extractEvidenceInternal(applicationId, "system");
+        } else {
+          throw new Error(`unknown job kind: ${job.kind}`);
+        }
+        await supabaseAdmin.from("jobs").update({ status: "done", updated_at: new Date().toISOString() }).eq("id", job.id);
+        done += 1;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        const dead = job.attempts >= MAX_ATTEMPTS;
+        await supabaseAdmin
+          .from("jobs")
+          .update({
+            status: dead ? "failed" : "queued",
+            last_error: msg,
+            run_after: new Date(Date.now() + Math.min(60_000 * job.attempts, 300_000)).toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", job.id);
+        failed += 1;
+      }
+    }
+    return { claimed: (claimed ?? []).length, done, failed };
   });

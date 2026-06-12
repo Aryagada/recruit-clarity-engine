@@ -106,20 +106,8 @@ export const getJob = createServerFn({ method: "POST" })
     };
   });
 
-// Pipeline data: applications for the role, each with its person, screen
-// session, evidence rows, and file pointers. RLS restricts to the caller's org.
-export const listJobCandidates = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) => z.object({ jobId: z.string().uuid() }).parse(input))
-  .handler(async ({ data, context }) => {
-    const { data: apps, error } = await context.supabase
-      .from("applications")
-      .select("*, candidates(*), screen_sessions(*), evidence(*)")
-      .eq("role_id", data.jobId)
-      .order("created_at", { ascending: false });
-    if (error) throw new Error(error.message);
-    return apps ?? [];
-  });
+// (Pipeline data now comes from getPipelinePage in pipeline.functions.ts —
+// keyset-paginated thin rows. The old unbounded listJobCandidates was removed.)
 
 const UpdateJobSchema = z.object({
   jobId: z.string().uuid(),

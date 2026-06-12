@@ -17,8 +17,9 @@ const GetPipelinePageSchema = z.object({
   limit: z.number().int().min(1).max(100).default(50),
 });
 
-// Escape PostgREST .or() reserved characters so a search string can't break
-// out of the ilike filter expression.
+// Strip PostgREST .or() reserved characters so the search can't break out of
+// the ilike filter expression. ILIKE is index-backed by the pg_trgm GIN indexes
+// on candidates (see migration 20260612110000).
 function sanitizeSearch(q: string): string {
   return q.replace(/[(),]/g, " ").replace(/%/g, "").trim();
 }
@@ -45,6 +46,8 @@ export const getPipelinePage = createServerFn({ method: "POST" })
 
     const search = data.search ? sanitizeSearch(data.search) : "";
     if (search) {
+      // candidates!inner means a match filters the parent application rows.
+      // Trigram GIN indexes keep this ILIKE off a sequential scan.
       query = query.or(`full_name.ilike.%${search}%,email.ilike.%${search}%`, { foreignTable: "candidates" });
     }
 
@@ -138,4 +141,21 @@ export const listRoleOptions = createServerFn({ method: "GET" })
       .order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
     return data ?? [];
+  });
+
+// Cheap total applicant count for a role/org — a single COUNT(*) over the
+// covered index (head:true => no rows transferred). Used by the role header and
+// pipeline tab instead of loading the full list to call .length.
+export const getPipelineCounts = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ roleId: z.string().uuid().optional() }).parse(input))
+  .handler(async ({ data, context }) => {
+    let q = context.supabase
+      .from("applications")
+      .select("id", { count: "exact", head: true })
+      .eq("org_id", context.orgId);
+    if (data.roleId) q = q.eq("role_id", data.roleId);
+    const { count, error } = await q;
+    if (error) throw new Error(error.message);
+    return { total: count ?? 0 };
   });
