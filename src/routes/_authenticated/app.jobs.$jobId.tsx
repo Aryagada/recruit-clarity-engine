@@ -2,16 +2,16 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState, useEffect } from "react";
-import { getJob, listJobCandidates, decideApplication, updateJob } from "@/lib/jobs.functions";
-import { getResumeUrl } from "@/lib/candidates.functions";
-import { rerunEvidence } from "@/lib/ai.functions";
+import { getJob, updateJob } from "@/lib/jobs.functions";
+import { getPipelineCounts } from "@/lib/pipeline.functions";
+import { PipelineConsole } from "@/components/PipelineConsole";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Copy, ExternalLink, Plus, Trash2, FileText, RefreshCw } from "lucide-react";
+import { Copy, Plus, Trash2 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/app/jobs/$jobId")({
   head: () => ({ meta: [{ title: "Role · Interview OS" }] }),
@@ -21,19 +21,11 @@ export const Route = createFileRoute("/_authenticated/app/jobs/$jobId")({
 function JobDetail() {
   const { jobId } = Route.useParams();
   const fetchJob = useServerFn(getJob);
-  const fetchCandidates = useServerFn(listJobCandidates);
-  const decide = useServerFn(decideApplication);
+  const fetchCounts = useServerFn(getPipelineCounts);
   const jobQuery = useQuery({ queryKey: ["job", jobId], queryFn: () => fetchJob({ data: { jobId } }), staleTime: 30_000 });
-  const candidatesQuery = useQuery({ queryKey: ["candidates", jobId], queryFn: () => fetchCandidates({ data: { jobId } }), staleTime: 30_000 });
-  const [selected, setSelected] = useState<string | null>(null);
-  const [reason, setReason] = useState("");
-
-  const mut = useMutation({
-    mutationFn: (v: { applicationId: string; toStage: "shortlisted" | "rejected" | "hired"; reason?: string }) =>
-      decide({ data: v }),
-    onSuccess: () => { setReason(""); candidatesQuery.refetch(); toast.success("Decision logged"); },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
-  });
+  // Cheap COUNT(*) for the header/tab — no row loads (see getPipelineCounts).
+  const countsQuery = useQuery({ queryKey: ["pipeline-counts", jobId], queryFn: () => fetchCounts({ data: { roleId: jobId } }), staleTime: 30_000 });
+  const total = countsQuery.data?.total;
 
   if (jobQuery.isError) {
     return (
@@ -48,9 +40,6 @@ function JobDetail() {
   }
   if (jobQuery.isLoading || !jobQuery.data) return <div className="text-muted-foreground">Loading…</div>;
   const job = jobQuery.data;
-  const candidates = candidatesQuery.data ?? [];
-  const candidatesLoading = candidatesQuery.isLoading;
-  const cand = selected ? candidates.find((c) => c.id === selected) : null;
   const applyUrl = `${typeof window !== "undefined" ? window.location.origin : ""}/apply/${job.id}`;
 
   return (
@@ -59,7 +48,7 @@ function JobDetail() {
       <div className="mt-2 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">{job.title}</h1>
-          <div className="mt-1 ios-mono text-xs text-muted-foreground">{job.status} · {candidatesLoading ? "…" : candidates.length} applicants · rubric v{job.rubric_version}</div>
+          <div className="mt-1 ios-mono text-xs text-muted-foreground">{job.status} · {total ?? "…"} applicants · rubric v{job.rubric_version}</div>
         </div>
         {job.status === "open" && (
           <Button variant="outline" size="sm" className="gap-2" onClick={() => { navigator.clipboard.writeText(applyUrl); toast.success("Apply link copied"); }}>
@@ -71,7 +60,7 @@ function JobDetail() {
       <Tabs defaultValue="edit" className="mt-6">
         <TabsList>
           <TabsTrigger value="edit">Edit role</TabsTrigger>
-          <TabsTrigger value="pipeline">Pipeline{candidatesLoading ? "" : ` (${candidates.length})`}</TabsTrigger>
+          <TabsTrigger value="pipeline">Pipeline{total != null ? ` (${total})` : ""}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="edit" className="mt-6">
@@ -79,49 +68,8 @@ function JobDetail() {
         </TabsContent>
 
         <TabsContent value="pipeline" className="mt-6">
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,360px)_1fr]">
-            <div className="rounded-lg border border-border bg-card">
-              <div className="ios-eyebrow p-4 border-b border-border">Pipeline</div>
-              {candidatesLoading ? (
-                <div className="p-6 text-sm text-muted-foreground">Loading candidates…</div>
-              ) : candidates.length === 0 ? (
-                <div className="p-6 text-sm text-muted-foreground">No applicants yet. Share the apply link.</div>
-              ) : (
-                <ul className="divide-y divide-border">
-                  {candidates.map((c) => {
-                    const person = c.candidates as unknown as { full_name: string; email: string } | null;
-                    return (
-                      <li key={c.id}>
-                        <button onClick={() => setSelected(c.id)} className={`block w-full p-4 text-left hover:bg-muted/50 ${selected === c.id ? "bg-muted/70" : ""}`}>
-                          <div className="flex items-center justify-between">
-                            <span className="font-medium">{person?.full_name ?? "—"}</span>
-                            <span className="ios-mono text-[10px] text-muted-foreground">{c.needs_human_screen ? "human?" : c.stage}</span>
-                          </div>
-                          <div className="text-xs text-muted-foreground">{person?.email}</div>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </div>
-
-            <div className="rounded-lg border border-border bg-card p-6">
-              {!cand ? (
-                <div className="grid h-full place-items-center text-sm text-muted-foreground">Select a candidate to review evidence</div>
-              ) : (
-                <CandidatePanel
-                  application={cand}
-                  reason={reason}
-                  setReason={setReason}
-                  onDecide={(toStage) => mut.mutate({ applicationId: cand.id, toStage, reason: reason || undefined })}
-                  pending={mut.isPending}
-                  onRescored={() => candidatesQuery.refetch()}
-                  screenUrl={`/screen/${cand.id}`}
-                />
-              )}
-            </div>
-          </div>
+          {/* Keyset-paginated + virtualized, scoped to this role (shared with the global console). */}
+          <PipelineConsole roleId={jobId} />
         </TabsContent>
       </Tabs>
     </div>
@@ -408,137 +356,5 @@ function DeleteBtn({ onClick }: { onClick: () => void }) {
     <Button size="sm" variant="ghost" className="h-7 gap-1 px-2 text-destructive hover:text-destructive" onClick={onClick}>
       <Trash2 className="h-3.5 w-3.5" />Delete
     </Button>
-  );
-}
-
-// ---- Candidate review panel (pipeline tab) ---------------------------------
-
-type AppRow = Awaited<ReturnType<typeof listJobCandidates>>[number];
-type EvidenceRow = {
-  competency_key: string;
-  summary: string | null;
-  quotes: unknown;
-  completeness: string | null;
-  extraction_id: string;
-  created_at: string;
-};
-
-// Reduce many versioned evidence rows down to the latest extraction run.
-function latestEvidence(rows: EvidenceRow[]): EvidenceRow[] {
-  if (!rows.length) return [];
-  const latest = rows.reduce((a, b) => (a.created_at >= b.created_at ? a : b));
-  return rows.filter((r) => r.extraction_id === latest.extraction_id);
-}
-
-function CandidatePanel({ application, reason, setReason, onDecide, pending, onRescored, screenUrl }: {
-  application: AppRow; reason: string; setReason: (v: string) => void;
-  onDecide: (s: "shortlisted" | "rejected" | "hired") => void; pending: boolean;
-  onRescored: () => void; screenUrl: string;
-}) {
-  const person = application.candidates as unknown as { full_name: string; email: string; phone: string | null } | null;
-  const session = (Array.isArray(application.screen_sessions) ? application.screen_sessions[0] : application.screen_sessions) as
-    | { status: string; completeness: number | null; flags: unknown } | null;
-  const evidenceRows = latestEvidence(((application.evidence ?? []) as unknown as EvidenceRow[]));
-  const flags = (session?.flags ?? []) as { kind: string; note: string; quote?: string }[];
-
-  const getResume = useServerFn(getResumeUrl);
-  const rerun = useServerFn(rerunEvidence);
-  const rerunMut = useMutation({
-    mutationFn: () => rerun({ data: { applicationId: application.id } }),
-    onSuccess: () => { toast.success("Evidence re-extracted (new version)"); onRescored(); },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Re-run failed"),
-  });
-
-  async function openResume() {
-    try {
-      const { url } = await getResume({ data: { applicationId: application.id } });
-      window.open(url, "_blank", "noopener");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not open resume");
-    }
-  }
-
-  return (
-    <div>
-      <div className="flex items-start justify-between">
-        <div>
-          <h2 className="text-xl font-semibold">{person?.full_name ?? "—"}</h2>
-          <div className="text-sm text-muted-foreground">{person?.email}{person?.phone ? ` · ${person.phone}` : ""}</div>
-        </div>
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" className="gap-1" onClick={openResume}><FileText className="h-3.5 w-3.5" />Resume</Button>
-          <a href={screenUrl} target="_blank" rel="noreferrer"><Button variant="ghost" size="sm" className="gap-1"><ExternalLink className="h-3.5 w-3.5" />Open screen</Button></a>
-        </div>
-      </div>
-
-      <div className="mt-2 ios-mono text-xs text-muted-foreground">
-        stage: {application.stage}{session?.completeness != null ? ` · evidence ${session.completeness}/100` : ""}
-      </div>
-
-      {application.needs_human_screen && (
-        <div className="mt-4 rounded border border-amber-500/40 bg-amber-500/5 p-3 text-sm">Candidate requested a human screen.</div>
-      )}
-      {application.stage === "knocked_out" && (
-        <div className="mt-4 rounded border border-destructive/30 bg-destructive/5 p-3 text-sm">Failed disclosed knockout criteria.</div>
-      )}
-
-      {evidenceRows.length === 0 ? (
-        <div className="mt-6 rounded border border-dashed border-border p-6 text-sm text-muted-foreground">
-          {session?.status === "in_progress" ? "Screening in progress…" : session?.status === "completed" ? "Extracting evidence…" : "Candidate has not started the AI screening interview yet."}
-        </div>
-      ) : (
-        <div className="mt-6 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="ios-eyebrow">Evidence by competency</div>
-            <Button variant="ghost" size="sm" className="gap-1" disabled={rerunMut.isPending} onClick={() => rerunMut.mutate()}>
-              <RefreshCw className={`h-3.5 w-3.5 ${rerunMut.isPending ? "animate-spin" : ""}`} />Re-run
-            </Button>
-          </div>
-          {evidenceRows.map((e) => {
-            const quotes = Array.isArray(e.quotes) ? (e.quotes as string[]) : [];
-            return (
-              <div key={e.competency_key} className="rounded-md border border-border p-4">
-                <div className="flex items-center justify-between">
-                  <div className="font-medium">{e.competency_key}</div>
-                  <span className={`ios-mono text-[10px] rounded px-1.5 py-0.5 ${e.completeness === "strong" ? "bg-accent/15 text-accent" : e.completeness === "partial" ? "bg-muted" : "bg-destructive/10 text-destructive"}`}>{e.completeness}</span>
-                </div>
-                <p className="mt-2 text-sm text-muted-foreground">{e.summary}</p>
-                {quotes.length > 0 && (
-                  <ul className="mt-3 space-y-1 border-l-2 border-border pl-3 text-sm italic">
-                    {quotes.map((q, i) => <li key={i}>"{q}"</li>)}
-                  </ul>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {flags.length > 0 && (
-        <div className="mt-6">
-          <div className="ios-eyebrow mb-2">Flags</div>
-          <ul className="space-y-2 text-sm">
-            {flags.map((f, i) => (
-              <li key={i} className="rounded border border-border p-3">
-                <span className="ios-mono text-[10px] text-muted-foreground">{f.kind}</span>
-                <div>{f.note}</div>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {application.status !== "hired" && application.status !== "rejected" && (
-        <div className="mt-6 border-t border-border pt-6">
-          <div className="ios-eyebrow mb-2">Decision (logged to audit trail)</div>
-          <Textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason (required for rejection)…" rows={2} />
-          <div className="mt-3 flex gap-2">
-            <Button size="sm" onClick={() => onDecide("shortlisted")} disabled={pending}>Advance to shortlist</Button>
-            <Button size="sm" variant="outline" onClick={() => onDecide("hired")} disabled={pending}>Mark hired</Button>
-            <Button size="sm" variant="ghost" className="text-destructive" onClick={() => { if (!reason.trim()) { toast.error("Reason required"); return; } onDecide("rejected"); }} disabled={pending}>Reject</Button>
-          </div>
-        </div>
-      )}
-    </div>
   );
 }
