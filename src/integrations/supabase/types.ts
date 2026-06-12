@@ -834,23 +834,6 @@ export type Database = {
         Returns: boolean
       }
       is_org_member: { Args: { _org: string }; Returns: boolean }
-      apply_to_role: {
-        Args: {
-          p_role_id: string
-          p_full_name: string
-          p_email: string
-          p_phone: string | null
-          p_resume_summary: string | null
-          p_resume_path: string
-          p_knockout_answers: Json
-          p_knocked_out: boolean
-        }
-        Returns: string
-      }
-      claim_jobs: {
-        Args: { p_limit?: number }
-        Returns: Database["public"]["Tables"]["jobs"]["Row"][]
-      }
     }
     Enums: {
       actor_type: "human" | "system"
